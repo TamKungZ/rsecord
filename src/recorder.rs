@@ -37,11 +37,7 @@ pub enum AudioSource {
 
 impl AudioSource {
     pub fn all() -> Vec<AudioSource> {
-        let mut v = vec![AudioSource::Off, AudioSource::Mic];
-        if cfg!(windows) {
-            v.push(AudioSource::System);
-        }
-        v
+        vec![AudioSource::Off, AudioSource::Mic, AudioSource::System]
     }
 }
 
@@ -203,6 +199,33 @@ impl Recorder {
         }
         self.writer.lock().unwrap().write_end()?;
         Ok(self.out)
+    }
+}
+
+fn system_device(host: &cpal::Host) -> Result<(cpal::Device, cpal::SupportedStreamConfig)> {
+    #[cfg(target_os = "windows")]
+    {
+        let d = host.default_output_device().context("No speaker found")?;
+        let c = d.default_output_config()?;
+        Ok((d, c))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let keys: &[&str] = if cfg!(target_os = "macos") {
+            &["blackhole", "loopback", "soundflower", "aggregate"]
+        } else {
+            &["monitor"]
+        };
+        for d in host.input_devices()? {
+            if let Ok(name) = d.name() {
+                let n = name.to_lowercase();
+                if keys.iter().any(|k| n.contains(k)) {
+                    let c = d.default_input_config()?;
+                    return Ok((d, c));
+                }
+            }
+        }
+        Err(anyhow!("No system audio source found"))
     }
 }
 
@@ -379,11 +402,7 @@ fn audio_loop(
                 let c = d.default_input_config()?;
                 (d, c)
             }
-            _ => {
-                let d = host.default_output_device().context("No speaker found")?;
-                let c = d.default_output_config()?;
-                (d, c)
-            }
+            _ => system_device(&host)?,
         };
         let ch = config.channels() as usize;
         let rate = config.sample_rate();
