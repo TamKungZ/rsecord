@@ -44,6 +44,8 @@ The audio source cannot be changed while recording.
 | Linux    | Yes    | Yes        | Yes, via a PulseAudio/PipeWire monitor |
 | macOS    | Yes    | Yes        | Requires a virtual device (BlackHole) |
 
-## License note
+## License
 
-FDK-AAC carries licensing and patent considerations. Review the applicable terms before commercial distribution.
+Released under the [MIT License](LICENSE). Copyright (c) 2026 TamKungZ_.
+
+FDK-AAC carries licensing and patent considerations of its own. Review the applicable terms before commercial distribution.
