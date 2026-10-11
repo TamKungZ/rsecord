@@ -1,0 +1,9 @@
+/target
+Cargo.lock.bak
+*.mp4
+*.pdb
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
