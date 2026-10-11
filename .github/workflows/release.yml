@@ -88,13 +88,13 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           git clone --depth 1 --branch 1.4.2 https://gitlab.freedesktop.org/pipewire/pipewire.git
           cd pipewire
-          meson setup build --prefix=/opt/pipewire --libdir=lib --buildtype=release \
+          meson setup build --prefix=$HOME/pipewire --libdir=lib --buildtype=release \
             -Dtests=disabled -Dexamples=disabled -Dman=disabled -Ddocs=disabled \
             "-Dsession-managers=[]"
           ninja -C build
-          sudo ninja -C build install
-          echo "PKG_CONFIG_PATH=/opt/pipewire/lib/pkgconfig" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=/opt/pipewire/lib" >> $GITHUB_ENV
+          ninja -C build install
+          echo "PKG_CONFIG_PATH=$HOME/pipewire/lib/pkgconfig" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$HOME/pipewire/lib" >> $GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
