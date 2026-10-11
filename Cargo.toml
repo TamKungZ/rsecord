@@ -3,6 +3,8 @@ name = "rsecord"
 version = "0.1.0"
 edition = "2024"
 description = "lite cross-platform screen recorder"
+authors = ["TamKungZ_"]
+license = "MIT"
 
 [dependencies]
 iced = { version = "0.14", features = ["tokio"] }
