@@ -10,6 +10,12 @@ A lightweight, cross-platform screen recorder built with Rust and [iced](https:/
 - Live recording timer, status line, and saved file path
 - Bitrate scales automatically with resolution (1 to 20 Mbps)
 
+&nbsp;
+
+<p align="center">
+  <img src="assets/rsecord.webp" alt="rsecord" width="40%">
+</p>
+
 ## Output
 
 Files are saved to `Videos/rsecord/`, falling back to `~/rsecord/` if the Videos folder is unavailable.
