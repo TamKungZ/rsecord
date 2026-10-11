@@ -202,33 +202,6 @@ impl Recorder {
     }
 }
 
-fn system_device(host: &cpal::Host) -> Result<(cpal::Device, cpal::SupportedStreamConfig)> {
-    #[cfg(target_os = "windows")]
-    {
-        let d = host.default_output_device().context("No speaker found")?;
-        let c = d.default_output_config()?;
-        Ok((d, c))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let keys: &[&str] = if cfg!(target_os = "macos") {
-            &["blackhole", "loopback", "soundflower", "aggregate"]
-        } else {
-            &["monitor"]
-        };
-        for d in host.input_devices()? {
-            if let Ok(name) = d.name() {
-                let n = name.to_lowercase();
-                if keys.iter().any(|k| n.contains(k)) {
-                    let c = d.default_input_config()?;
-                    return Ok((d, c));
-                }
-            }
-        }
-        Err(anyhow!("No system audio source found"))
-    }
-}
-
 fn capture_loop(
     sm: SendMonitor,
     stop: Arc<AtomicBool>,
@@ -384,6 +357,33 @@ impl Resampler {
         let drop = (self.pos as usize).min(self.buf.len());
         self.buf.drain(..drop);
         self.pos -= drop as f64;
+    }
+}
+
+fn system_device(host: &cpal::Host) -> Result<(cpal::Device, cpal::SupportedStreamConfig)> {
+    #[cfg(target_os = "windows")]
+    {
+        let d = host.default_output_device().context("No speaker found")?;
+        let c = d.default_output_config()?;
+        Ok((d, c))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let keys: &[&str] = if cfg!(target_os = "macos") {
+            &["blackhole", "loopback", "soundflower", "aggregate"]
+        } else {
+            &["monitor"]
+        };
+        for d in host.input_devices()? {
+            if let Ok(desc) = d.description() {
+                let n = desc.name().to_lowercase();
+                if keys.iter().any(|k| n.contains(k)) {
+                    let c = d.default_input_config()?;
+                    return Ok((d, c));
+                }
+            }
+        }
+        Err(anyhow!("No system audio source found"))
     }
 }
 
