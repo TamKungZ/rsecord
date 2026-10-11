@@ -14,11 +14,21 @@ fn theme(_: &App) -> Theme {
 }
 
 fn main() -> iced::Result {
+    let icon = iced::window::icon::from_file_data(
+        include_bytes!("../assets/icon-256.png"),
+        None,
+    )
+    .ok();
+
     iced::application(App::new, App::update, App::view)
         .title("rsecord")
         .subscription(App::subscription)
         .theme(theme)
-        .window_size((340.0, 260.0))
+        .window(iced::window::Settings {
+            size: iced::Size::new(340.0, 260.0),
+            icon,
+            ..Default::default()
+        })
         .run()
 }
 
