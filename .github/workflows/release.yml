@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and draft a release for (leave empty to only build)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -17,6 +22,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
@@ -24,10 +31,11 @@ jobs:
       - name: Create installer
         shell: pwsh
         run: |
-          @'
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          $iss = @'
           [Setup]
           AppName=rsecord
-          AppVersion=0.1.0
+          AppVersion=APPVERSION
           AppPublisher=TamKungZ_
           DefaultDirName={autopf}\rsecord
           DefaultGroupName=rsecord
@@ -51,7 +59,8 @@ jobs:
 
           [Run]
           Filename: "{app}\rsecord.exe"; Description: "Launch rsecord"; Flags: nowait postinstall skipifsilent
-          '@ | Set-Content -Path installer.iss -Encoding UTF8
+          '@
+          $iss.Replace('APPVERSION', $ver) | Set-Content -Path installer.iss -Encoding UTF8
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
       - uses: actions/upload-artifact@v4
         with:
@@ -62,14 +71,29 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential cmake clang pkg-config \
-            libasound2-dev libdbus-1-dev libpipewire-0.3-dev \
+            build-essential cmake clang libclang-dev pkg-config ninja-build python3-pip \
+            libasound2-dev libdbus-1-dev \
             libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxrandr-dev \
             libxkbcommon-dev libwayland-dev libegl1-mesa-dev libgbm-dev
+          pip3 install --user meson
+      - name: Build PipeWire
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          git clone --depth 1 --branch 1.4.2 https://gitlab.freedesktop.org/pipewire/pipewire.git
+          cd pipewire
+          meson setup build --prefix=/opt/pipewire --libdir=lib --buildtype=release \
+            -Dtests=disabled -Dexamples=disabled -Dman=disabled -Ddocs=disabled \
+            "-Dsession-managers=[]"
+          ninja -C build
+          sudo ninja -C build install
+          echo "PKG_CONFIG_PATH=/opt/pipewire/lib/pkgconfig" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/opt/pipewire/lib" >> $GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release
@@ -88,6 +112,8 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -109,7 +135,7 @@ jobs:
           path: dist/rsecord-macos-universal.zip
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
     needs: [windows, linux, macos]
     runs-on: ubuntu-latest
     steps:
@@ -119,6 +145,7 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
           generate_release_notes: true
           files: dist/*
