@@ -1,0 +1,124 @@
+name: build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - run: choco install innosetup -y --no-progress
+      - name: Create installer
+        shell: pwsh
+        run: |
+          @'
+          [Setup]
+          AppName=rsecord
+          AppVersion=0.1.0
+          AppPublisher=TamKungZ_
+          DefaultDirName={autopf}\rsecord
+          DefaultGroupName=rsecord
+          OutputDir=dist
+          OutputBaseFilename=rsecord-setup
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          UninstallDisplayIcon={app}\rsecord.exe
+
+          [Tasks]
+          Name: desktopicon; Description: "Create a desktop shortcut"
+
+          [Files]
+          Source: "target\release\rsecord.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+          [Icons]
+          Name: "{group}\rsecord"; Filename: "{app}\rsecord.exe"
+          Name: "{autodesktop}\rsecord"; Filename: "{app}\rsecord.exe"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\rsecord.exe"; Description: "Launch rsecord"; Flags: nowait postinstall skipifsilent
+          '@ | Set-Content -Path installer.iss -Encoding UTF8
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rsecord-windows
+          path: dist/rsecord-setup.exe
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake clang pkg-config \
+            libasound2-dev libdbus-1-dev libpipewire-0.3-dev \
+            libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxrandr-dev \
+            libxkbcommon-dev libwayland-dev libegl1-mesa-dev libgbm-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Package
+        run: |
+          mkdir dist
+          tar -czf dist/rsecord-linux-x86_64.tar.gz -C target/release rsecord
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rsecord-linux
+          path: dist/rsecord-linux-x86_64.tar.gz
+
+  macos:
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --target aarch64-apple-darwin
+      - run: cargo build --release --target x86_64-apple-darwin
+      - name: Create universal binary
+        run: |
+          mkdir dist
+          lipo -create -output dist/rsecord \
+            target/aarch64-apple-darwin/release/rsecord \
+            target/x86_64-apple-darwin/release/rsecord
+          chmod +x dist/rsecord
+          cd dist
+          zip rsecord-macos-universal.zip rsecord
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rsecord-macos
+          path: dist/rsecord-macos-universal.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist/*
