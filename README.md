@@ -32,11 +32,11 @@ The audio source cannot be changed while recording.
 
 ## Platform notes
 
-| Platform | Screen | Microphone | System audio |
-|----------|--------|------------|--------------|
-| Windows  | Yes    | Yes        | Yes          |
-| Linux    | Yes    | Yes        | No           |
-| macOS    | Yes    | Yes        | No           |
+| Platform | Screen | Microphone | System audio                          |
+|----------|--------|------------|---------------------------------------|
+| Windows  | Yes    | Yes        | Yes                                   |
+| Linux    | Yes    | Yes        | Yes, via a PulseAudio/PipeWire monitor |
+| macOS    | Yes    | Yes        | Requires a virtual device (BlackHole) |
 
 ## License note
 
