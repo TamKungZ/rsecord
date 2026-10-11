@@ -41,6 +41,7 @@ jobs:
           DefaultGroupName=rsecord
           OutputDir=dist
           OutputBaseFilename=rsecord-setup
+          SetupIconFile=assets\icon.ico
           Compression=lzma2
           SolidCompression=yes
           ArchitecturesAllowed=x64compatible
@@ -99,8 +100,20 @@ jobs:
       - run: cargo build --release
       - name: Package
         run: |
-          mkdir dist
-          tar -czf dist/rsecord-linux-x86_64.tar.gz -C target/release rsecord
+          mkdir -p dist/rsecord
+          cp target/release/rsecord dist/rsecord/
+          cp assets/icon-256.png dist/rsecord/rsecord.png
+          cat > dist/rsecord/rsecord.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=rsecord
+          Comment=Lightweight screen recorder
+          Exec=rsecord
+          Icon=rsecord
+          Categories=AudioVideo;Recorder;
+          Terminal=false
+          EOF
+          tar -czf dist/rsecord-linux-x86_64.tar.gz -C dist rsecord
       - uses: actions/upload-artifact@v4
         with:
           name: rsecord-linux
@@ -120,15 +133,38 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --target aarch64-apple-darwin
       - run: cargo build --release --target x86_64-apple-darwin
-      - name: Create universal binary
+      - name: Create app bundle
         run: |
-          mkdir dist
-          lipo -create -output dist/rsecord \
+          VER=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          APP=dist/rsecord.app
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          lipo -create -output "$APP/Contents/MacOS/rsecord" \
             target/aarch64-apple-darwin/release/rsecord \
             target/x86_64-apple-darwin/release/rsecord
-          chmod +x dist/rsecord
+          chmod +x "$APP/Contents/MacOS/rsecord"
+          cp assets/icon.icns "$APP/Contents/Resources/icon.icns"
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>rsecord</string>
+            <key>CFBundleDisplayName</key><string>rsecord</string>
+            <key>CFBundleIdentifier</key><string>com.tamkungz.rsecord</string>
+            <key>CFBundleExecutable</key><string>rsecord</string>
+            <key>CFBundleIconFile</key><string>icon</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$VER</string>
+            <key>CFBundleVersion</key><string>$VER</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSMicrophoneUsageDescription</key><string>rsecord needs microphone access to record audio.</string>
+          </dict>
+          </plist>
+          EOF
+          codesign --force --deep --sign - "$APP"
           cd dist
-          zip rsecord-macos-universal.zip rsecord
+          ditto -c -k --keepParent rsecord.app rsecord-macos-universal.zip
       - uses: actions/upload-artifact@v4
         with:
           name: rsecord-macos
