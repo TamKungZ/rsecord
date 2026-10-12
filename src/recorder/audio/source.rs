@@ -1,5 +1,6 @@
 use super::super::AudioSource;
 use anyhow::{anyhow, Context, Result};
+use cpal::traits::{DeviceTrait, HostTrait};
 use std::sync::mpsc::Sender;
 
 pub struct Source {
@@ -58,7 +59,8 @@ fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
     use std::sync::Arc;
     use std::time::Duration;
     use wasapi::{
-        initialize_mta, DeviceEnumerator, Direction, SampleType, ShareMode, WaveFormat,
+        initialize_mta, DeviceEnumerator, Direction, SampleType, ShareMode, StreamMode,
+        WaveFormat,
     };
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -96,13 +98,13 @@ fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
             );
             let blockalign = want.get_blockalign() as usize;
 
-            let (_, min_period) = client
-                .get_periods()
-                .map_err(|e| format!("periods: {e}"))?;
-            let _buf_duration = std::cmp::max(200_000u64, min_period);
+            let stream_mode = StreamMode::EventsShared {
+                autoconvert: true,
+                buffer_duration_hns: 200_000,
+            };
 
             client
-                .initialize_client(&want, &Direction::Capture, &ShareMode::Shared, true)
+                .initialize_client(&want, &Direction::Capture, &stream_mode)
                 .map_err(|e| format!("initialize loopback: {e}"))?;
 
             let capture = client
@@ -123,33 +125,31 @@ fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
                 if event.wait_for_event(100).is_err() {
                     continue;
                 }
-                let mut n: usize = 0;
-                if capture
-                    .read_from_device(&mut buf, &mut n, blockalign)
-                    .is_err()
-                {
-                    continue;
-                }
-                if n == 0 {
-                    continue;
-                }
+                match capture.read_from_device(blockalign, &mut buf) {
+                    Ok((n, _flags)) => {
+                        if n == 0 {
+                            continue;
+                        }
+                        let n_bytes = n as usize;
+                        let samples: Vec<f32> = buf[..n_bytes]
+                            .chunks_exact(4)
+                            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                            .collect();
 
-                let samples: Vec<f32> = buf[..n]
-                    .chunks_exact(4)
-                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                    .collect();
+                        let frames: Vec<[f32; 2]> = samples
+                            .chunks(channels)
+                            .map(|c| {
+                                let l = c[0];
+                                let r = if channels > 1 { c[1] } else { l };
+                                [l, r]
+                            })
+                            .collect();
 
-                let frames: Vec<[f32; 2]> = samples
-                    .chunks(channels)
-                    .map(|c| {
-                        let l = c[0];
-                        let r = if channels > 1 { c[1] } else { l };
-                        [l, r]
-                    })
-                    .collect();
-
-                if tx.send(frames).is_err() {
-                    break;
+                        if tx.send(frames).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => continue,
                 }
             }
 
@@ -183,8 +183,6 @@ fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
 
 #[cfg(not(target_os = "windows"))]
 fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
-    use cpal::traits::{DeviceTrait, HostTrait};
-
     let host = cpal::default_host();
     let keys: &[&str] = if cfg!(target_os = "macos") {
         &[
