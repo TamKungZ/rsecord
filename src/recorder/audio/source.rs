@@ -9,7 +9,7 @@ pub struct Source {
 }
 
 enum Inner {
-    Cpal(cpal::Stream),
+    Cpal { _stream: cpal::Stream },
     #[cfg(target_os = "windows")]
     Wasapi {
         stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
