@@ -204,7 +204,7 @@ fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
                 let stream = build_cpal_stream(&d, config, tx)?;
                 return Ok(Source {
                     rate,
-                    inner: Inner::Cpal(stream),
+                    inner: Inner::Cpal { _stream: stream },
                 });
             }
         }
