@@ -59,8 +59,7 @@ fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
     use std::sync::Arc;
     use std::time::Duration;
     use wasapi::{
-        initialize_mta, DeviceEnumerator, Direction, SampleType, ShareMode, StreamMode,
-        WaveFormat,
+        initialize_mta, DeviceEnumerator, Direction, SampleType, StreamMode, WaveFormat,
     };
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -69,9 +68,9 @@ fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
 
     let join = std::thread::spawn(move || {
         let run = || -> Result<(), String> {
-            unsafe {
-                initialize_mta().map_err(|e| format!("COM init failed: {e}"))?;
-            }
+            initialize_mta()
+                .ok()
+                .map_err(|e| format!("COM init failed: {e}"))?;
 
             let enumerator = DeviceEnumerator::new()
                 .map_err(|e| format!("device enumerator: {e}"))?;
@@ -125,12 +124,12 @@ fn open_system(tx: Sender<Vec<[f32; 2]>>) -> Result<Source> {
                 if event.wait_for_event(100).is_err() {
                     continue;
                 }
-                match capture.read_from_device(blockalign, &mut buf) {
-                    Ok((n, _flags)) => {
-                        if n == 0 {
+                match capture.read_from_device(&mut buf) {
+                    Ok((n_frames, _info)) => {
+                        if n_frames == 0 {
                             continue;
                         }
-                        let n_bytes = n as usize;
+                        let n_bytes = n_frames as usize * blockalign;
                         let samples: Vec<f32> = buf[..n_bytes]
                             .chunks_exact(4)
                             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
