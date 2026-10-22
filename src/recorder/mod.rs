@@ -1,5 +1,7 @@
 mod audio;
 mod capture;
+mod config;
+mod display;
 mod video;
 
 use anyhow::{anyhow, Context, Result};
@@ -17,12 +19,15 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use xcap::Monitor;
 
-use crate::settings::{Region, Settings, MIN_DIM};
+use crate::settings::{Region, MIN_DIM};
 use audio::audio_loop;
 use capture::{capture_loop, SendMonitor};
+use display::pick_monitor;
 use video::{crop_to, encode_loop, encoder_config, fill_yuv, parse_annexb};
+
+pub use config::{AudioSource, RecordConfig};
+pub use display::{list_displays, screenshot, DisplayInfo};
 
 pub(crate) const VIDEO_TIMESCALE: u32 = 90_000;
 pub(crate) const AUDIO_RATE: u32 = 48_000;
@@ -31,102 +36,6 @@ pub(crate) const AUDIO_TRACK: u32 = 2;
 
 pub(crate) type SharedWriter = Arc<Mutex<Mp4Writer<BufWriter<File>>>>;
 pub(crate) type FrameMsg = (Duration, xcap::image::RgbaImage);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AudioSource {
-    Off,
-    Mic,
-    System,
-}
-
-impl AudioSource {
-    pub fn all() -> Vec<AudioSource> {
-        vec![AudioSource::Off, AudioSource::Mic, AudioSource::System]
-    }
-}
-
-impl std::fmt::Display for AudioSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            AudioSource::Off => "No audio",
-            AudioSource::Mic => "Microphone",
-            AudioSource::System => "System audio",
-        })
-    }
-}
-
-pub struct RecordConfig {
-    pub source: AudioSource,
-    pub display: usize,
-    pub region: Option<Region>,
-    pub settings: Settings,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct DisplayInfo {
-    pub index: usize,
-    pub label: String,
-    pub width: u32,
-    pub height: u32,
-    pub primary: bool,
-}
-
-impl std::fmt::Display for DisplayInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.label)
-    }
-}
-
-pub fn list_displays() -> Vec<DisplayInfo> {
-    let Ok(monitors) = Monitor::all() else {
-        return Vec::new();
-    };
-    monitors
-        .iter()
-        .enumerate()
-        .map(|(index, m)| {
-            let width = m.width().unwrap_or(0);
-            let height = m.height().unwrap_or(0);
-            let primary = m.is_primary().unwrap_or(false);
-            let name = m.name().unwrap_or_default();
-            DisplayInfo {
-                index,
-                label: format!(
-                    "{}: {} {}x{}{}",
-                    index + 1,
-                    name,
-                    width,
-                    height,
-                    if primary { " (primary)" } else { "" }
-                ),
-                width,
-                height,
-                primary,
-            }
-        })
-        .collect()
-}
-
-fn pick_monitor(display: usize) -> Result<Monitor> {
-    let monitors = Monitor::all().map_err(|e| anyhow!("{e}"))?;
-    monitors
-        .get(display)
-        .cloned()
-        .or_else(|| {
-            monitors
-                .iter()
-                .find(|m| m.is_primary().unwrap_or(false))
-                .cloned()
-        })
-        .or_else(|| monitors.first().cloned())
-        .ok_or_else(|| anyhow!("No display found"))
-}
-
-pub fn screenshot(display: usize) -> Result<xcap::image::RgbaImage> {
-    pick_monitor(display)?
-        .capture_image()
-        .map_err(|e| anyhow!("{e}"))
-}
 
 pub struct Recorder {
     stop: Arc<AtomicBool>,
@@ -308,6 +217,7 @@ impl Recorder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::Settings;
 
     #[test]
     fn smoke_video_only() {
