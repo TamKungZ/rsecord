@@ -1,5 +1,8 @@
 //! Recording settings: ranges, presets, validation and persistence.
 
+use std::fmt;
+use std::path::PathBuf;
+
 /// Smallest width/height (pixels) accepted for a capture area or output size.
 pub const MIN_DIM: u32 = 16;
 
