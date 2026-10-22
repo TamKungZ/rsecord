@@ -2,28 +2,16 @@
 
 mod app;
 mod recorder;
+mod selector;
+mod settings;
 
 use app::App;
 
-fn theme(_: &App) -> iced::Theme {
-    iced::Theme::Dark
-}
-
+// `daemon` allows a second window for the area-selection overlay.
 fn main() -> iced::Result {
-    let icon = iced::window::icon::from_file_data(
-        include_bytes!("../assets/icon-256.png"),
-        None,
-    )
-    .ok();
-
-    iced::application(App::new, App::update, App::view)
-        .title("rsecord")
+    iced::daemon(App::new, App::update, App::view)
+        .title(App::title)
         .subscription(App::subscription)
-        .theme(theme)
-        .window(iced::window::Settings {
-            size: iced::Size::new(340.0, 260.0),
-            icon,
-            ..Default::default()
-        })
+        .theme(App::theme)
         .run()
 }
