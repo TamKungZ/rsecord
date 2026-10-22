@@ -7,10 +7,8 @@ use mp4::{
     AacConfig, AudioObjectType, AvcConfig, ChannelConfig, MediaConfig, Mp4Config, Mp4Writer,
     SampleFreqIndex, TrackConfig, TrackType,
 };
-use openh264::encoder::{
-    BitRate, Encoder, EncoderConfig, FrameRate, IntraFramePeriod, RateControlMode, UsageType,
-};
-use openh264::formats::{RgbaSliceU8, YUVBuffer};
+use openh264::encoder::Encoder;
+use openh264::formats::YUVBuffer;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
@@ -21,9 +19,10 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use xcap::Monitor;
 
+use crate::settings::{Region, Settings, MIN_DIM};
 use audio::audio_loop;
 use capture::{capture_loop, SendMonitor};
-use video::{crop, encode_loop, parse_annexb};
+use video::{crop_to, encode_loop, encoder_config, fill_yuv, parse_annexb};
 
 pub(crate) const VIDEO_TIMESCALE: u32 = 90_000;
 pub(crate) const AUDIO_RATE: u32 = 48_000;
@@ -56,6 +55,79 @@ impl std::fmt::Display for AudioSource {
     }
 }
 
+pub struct RecordConfig {
+    pub source: AudioSource,
+    pub display: usize,
+    pub region: Option<Region>,
+    pub settings: Settings,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DisplayInfo {
+    pub index: usize,
+    pub label: String,
+    pub width: u32,
+    pub height: u32,
+    pub primary: bool,
+}
+
+impl std::fmt::Display for DisplayInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
+}
+
+pub fn list_displays() -> Vec<DisplayInfo> {
+    let Ok(monitors) = Monitor::all() else {
+        return Vec::new();
+    };
+    monitors
+        .iter()
+        .enumerate()
+        .map(|(index, m)| {
+            let width = m.width().unwrap_or(0);
+            let height = m.height().unwrap_or(0);
+            let primary = m.is_primary().unwrap_or(false);
+            let name = m.name().unwrap_or_default();
+            DisplayInfo {
+                index,
+                label: format!(
+                    "{}: {} {}x{}{}",
+                    index + 1,
+                    name,
+                    width,
+                    height,
+                    if primary { " (primary)" } else { "" }
+                ),
+                width,
+                height,
+                primary,
+            }
+        })
+        .collect()
+}
+
+fn pick_monitor(display: usize) -> Result<Monitor> {
+    let monitors = Monitor::all().map_err(|e| anyhow!("{e}"))?;
+    monitors
+        .get(display)
+        .cloned()
+        .or_else(|| {
+            monitors
+                .iter()
+                .find(|m| m.is_primary().unwrap_or(false))
+                .cloned()
+        })
+        .or_else(|| monitors.first().cloned())
+        .ok_or_else(|| anyhow!("No display found"))
+}
+
+pub fn screenshot(display: usize) -> Result<xcap::image::RgbaImage> {
+    pick_monitor(display)?
+        .capture_image()
+        .map_err(|e| anyhow!("{e}"))
+}
+
 pub struct Recorder {
     stop: Arc<AtomicBool>,
     capture: JoinHandle<()>,
@@ -75,33 +147,45 @@ pub fn output_dir() -> PathBuf {
 }
 
 impl Recorder {
-    pub fn start(source: AudioSource, fps: u32) -> Result<Recorder> {
-        let monitors = Monitor::all().map_err(|e| anyhow!("{e}"))?;
-        let monitor = monitors
-            .iter()
-            .position(|m| m.is_primary().unwrap_or(false))
-            .map(|i| monitors[i].clone())
-            .or_else(|| monitors.into_iter().next())
-            .ok_or_else(|| anyhow!("No display found"))?;
+    pub fn start(cfg: RecordConfig) -> Result<Recorder> {
+        let RecordConfig {
+            source,
+            display,
+            region,
+            settings,
+        } = cfg;
+        settings.validate().map_err(|e| anyhow!(e))?;
+        let fps = settings.fps;
 
+        let monitor = pick_monitor(display)?;
         let first = monitor.capture_image().map_err(|e| anyhow!("{e}"))?;
-        let (w, h) = ((first.width() & !1) as usize, (first.height() & !1) as usize);
         let (full_w, full_h) = (first.width(), first.height());
 
-        let bps = ((w * h) as u64 * fps as u64 / 10).clamp(1_000_000, 20_000_000) as u32;
-        let cfg = EncoderConfig::new()
-            .usage_type(UsageType::ScreenContentRealTime)
-            .rate_control_mode(RateControlMode::Bitrate)
-            .bitrate(BitRate::from_bps(bps))
-            .max_frame_rate(FrameRate::from_hz(fps as f32))
-            .skip_frames(false)
-            .intra_frame_period(IntraFramePeriod::from_num_frames(fps * 2));
-        let mut enc = Encoder::with_api_config(openh264::OpenH264API::from_source(), cfg)
-            .map_err(|e| anyhow!("Failed to open h264 encoder: {e}"))?;
+        let rect = match region {
+            Some(r) => r.clamp_to(full_w, full_h).ok_or_else(|| {
+                anyhow!(
+                    "The selected area does not fit the display ({full_w}x{full_h}) \
+                     or is smaller than {MIN_DIM}x{MIN_DIM}"
+                )
+            })?,
+            None => Region {
+                x: 0,
+                y: 0,
+                w: full_w & !1,
+                h: full_h & !1,
+            },
+        };
+        let (ow, oh) = settings.output_size(rect.w, rect.h);
+        let bps = settings.bitrate_bps(ow, oh);
 
-        let mut yuv = YUVBuffer::new(w, h);
-        let mut scratch = Vec::new();
-        yuv.read_rgba8(RgbaSliceU8::new(crop(&first, w, h, &mut scratch), (w, h)));
+        let mut enc = Encoder::with_api_config(
+            openh264::OpenH264API::from_source(),
+            encoder_config(&settings, bps),
+        )
+        .map_err(|e| anyhow!("Failed to open h264 encoder: {e}"))?;
+
+        let mut yuv = YUVBuffer::new(ow as usize, oh as usize);
+        fill_yuv(&crop_to(first, rect), (ow, oh), settings.filter, &mut yuv);
         let (sps, pps, sample) = {
             let bits = enc
                 .encode(&yuv)
@@ -136,8 +220,8 @@ impl Recorder {
             timescale: VIDEO_TIMESCALE,
             language: "und".into(),
             media_conf: MediaConfig::AvcConfig(AvcConfig {
-                width: w as u16,
-                height: h as u16,
+                width: ow as u16,
+                height: oh as u16,
                 seq_param_set: sps,
                 pic_param_set: pps,
             }),
@@ -148,7 +232,7 @@ impl Recorder {
                 timescale: AUDIO_RATE,
                 language: "und".into(),
                 media_conf: MediaConfig::AacConfig(AacConfig {
-                    bitrate: 128_000,
+                    bitrate: settings.audio_kbps * 1000,
                     profile: AudioObjectType::AacLowComplexity,
                     freq_index: SampleFreqIndex::Freq48000,
                     chan_conf: ChannelConfig::Stereo,
@@ -165,7 +249,8 @@ impl Recorder {
         } else {
             let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
             let (s, wr) = (stop.clone(), writer.clone());
-            let handle = thread::spawn(move || audio_loop(source, s, wr, ready_tx));
+            let kbps = settings.audio_kbps;
+            let handle = thread::spawn(move || audio_loop(source, kbps, s, wr, ready_tx));
             match ready_rx.recv() {
                 Ok(Ok(())) => Some(handle),
                 Ok(Err(e)) => {
@@ -184,13 +269,15 @@ impl Recorder {
         let stop_c = stop.clone();
         let monitor = SendMonitor(monitor);
         let capture = thread::spawn(move || {
-            capture_loop(monitor, stop_c, tx, t0, full_w, full_h, fps);
+            capture_loop(monitor, stop_c, tx, t0, (full_w, full_h), rect, fps);
         });
 
         let wr = writer.clone();
         let first_sample = (0u64, sample);
-        let encode =
-            thread::spawn(move || encode_loop(rx, enc, yuv, (w, h), fps, wr, first_sample));
+        let filter = settings.filter;
+        let encode = thread::spawn(move || {
+            encode_loop(rx, enc, yuv, (ow, oh), filter, fps, wr, first_sample)
+        });
 
         Ok(Recorder {
             stop,
@@ -224,7 +311,13 @@ mod tests {
 
     #[test]
     fn smoke_video_only() {
-        let r = Recorder::start(AudioSource::Off, 30).expect("start");
+        let r = Recorder::start(RecordConfig {
+            source: AudioSource::Off,
+            display: 0,
+            region: None,
+            settings: Settings::default(),
+        })
+        .expect("start");
         thread::sleep(Duration::from_secs(3));
         let p = r.finish().expect("finish");
         println!("OUT={}", p.display());
