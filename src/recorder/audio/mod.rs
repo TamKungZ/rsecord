@@ -17,6 +17,7 @@ const AAC_FRAME: usize = 1024;
 
 pub fn audio_loop(
     source: AudioSource,
+    kbps: u32,
     stop: Arc<AtomicBool>,
     wr: SharedWriter,
     ready: mpsc::Sender<Result<(), String>>,
@@ -33,7 +34,7 @@ pub fn audio_loop(
     let rate = src.rate;
 
     let encoder = match aac::Encoder::new(aac::EncoderParams {
-        bit_rate: aac::BitRate::Cbr(128_000),
+        bit_rate: aac::BitRate::Cbr(kbps * 1000),
         sample_rate: AUDIO_RATE,
         transport: aac::Transport::Raw,
         channels: aac::ChannelMode::Stereo,
