@@ -1,4 +1,6 @@
+use super::video::crop_to;
 use super::FrameMsg;
+use crate::settings::Region;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, TrySendError};
 use std::sync::Arc;
@@ -9,13 +11,14 @@ use xcap::Monitor;
 pub struct SendMonitor(pub Monitor);
 unsafe impl Send for SendMonitor {}
 
+/// Frames are dropped, not queued, when the encoder falls behind.
 pub fn capture_loop(
     sm: SendMonitor,
     stop: Arc<AtomicBool>,
     tx: mpsc::SyncSender<FrameMsg>,
     t0: Instant,
-    full_w: u32,
-    full_h: u32,
+    (full_w, full_h): (u32, u32),
+    rect: Region,
     fps: u32,
 ) {
     let SendMonitor(monitor) = sm;
@@ -23,8 +26,10 @@ pub fn capture_loop(
     let mut next = Instant::now() + step;
     while !stop.load(Ordering::Relaxed) {
         if let Ok(img) = monitor.capture_image() {
+            // Ignore frames if the display resolution changed mid-recording.
             if img.width() == full_w && img.height() == full_h {
-                if let Err(TrySendError::Disconnected(_)) = tx.try_send((t0.elapsed(), img)) {
+                let frame = crop_to(img, rect);
+                if let Err(TrySendError::Disconnected(_)) = tx.try_send((t0.elapsed(), frame)) {
                     break;
                 }
             }
