@@ -4,17 +4,50 @@ A lightweight, cross-platform screen recorder built with Rust and [iced](https:/
 
 ## Features
 
-- 30 FPS screen capture of the primary display
 - H.264 video (OpenH264) and AAC-LC audio (FDK-AAC), muxed into a single MP4
-- Audio source: none, microphone, or system audio (Windows only)
-- Live recording timer, status line, and saved file path
-- Bitrate scales automatically with resolution (1 to 20 Mbps)
+- **Record a selected area**: a full-screen overlay lets you draw, move and resize the capture box, or type exact X / Y / W / H pixels
+- **Fine-grained video quality**: every number is editable (see below), with one-click presets
+- Choose which display to record
+- Audio source: none, microphone, or system audio (Windows; Linux via a monitor source; macOS via BlackHole)
+- Live recording timer, status line, and a running estimate of output size and bitrate
+- Settings are remembered between runs
 
 <br>
 
 <p align="center">
   <img src="assets/rsecord.webp" alt="rsecord" width="40%">
 </p>
+
+## Recording a selected area
+
+1. Switch **Capture area** to **Selected area**.
+2. Click **Select area on screen...**. rsecord hides itself, freezes a screenshot of the chosen display, and shows it full screen.
+3. Drag on empty space to draw a box. Drag inside the box to move it. Drag an edge or corner handle to resize it. A label shows the exact size and position in pixels.
+4. Press **Enter** (or **Confirm**) to accept, **Esc** (or **Cancel**) to abort. **Select all** selects the entire display.
+
+The area is stored in physical pixels, so it is exact on high-DPI screens. You can fine-tune it afterwards by typing X / Y / W / H. If you pick the overlay again, the current box is shown so you can adjust it. Width and height are rounded down to even numbers (an H.264 requirement), with a minimum of 16 x 16.
+
+## Video quality settings
+
+| Setting | Range | Notes |
+|---|---|---|
+| Preset | Low / Balanced / High / Ultra / Custom | Editing any value switches to Custom |
+| Frame rate | 1 - 120 fps | quick buttons for 15 / 24 / 30 / 60 / 120 |
+| Resolution | same as source, 2160p / 1440p / 1080p / 720p / 480p / 360p, percent, custom W x H | fixed-height presets never upscale; custom size can keep the aspect ratio |
+| Scaling filter | Nearest, Bilinear, Bicubic, Lanczos | only used when the output is resized |
+| Content type | Screen / UI, Camera / motion | encoder tuning hint |
+| Rate control | Target bitrate, Quality (QP range) | |
+| Bitrate | auto (bits per pixel, 0.01 - 2.0) or manual 100 - 100000 kbps | |
+| QP range | 0 - 51 (min and max) | lower = better quality |
+| Encoder effort | Fast, Balanced, Best quality | CPU vs. quality |
+| Keyframe interval | 0.2 - 60 s | |
+| Threads | 0 (auto) - 64 | |
+| Toggles | skip frames, adaptive quantization, background detection, scene-change detection | |
+| AAC bitrate | 32 - 320 kbps | |
+
+Invalid numbers are reported immediately and recording will not start until they are fixed.
+
+Settings are stored in `settings.conf` inside the `rsecord` folder of your OS config directory (for example `%APPDATA%\rsecord` on Windows, `~/.config/rsecord` on Linux).
 
 ## Output
 
@@ -30,11 +63,11 @@ Filename format: `rsecord-YYYY-MM-DD_HH-MM-SS.mp4`
 
 ## Usage
 
-1. Choose an audio source from the dropdown.
-2. Click **Start Recording**.
-3. Click **Stop** to finish. The file is written and its path is shown in the status line.
+1. Pick the display, capture mode (full screen or selected area) and audio source.
+2. Pick a quality preset or adjust the numbers.
+3. Click **Start Recording**, then **Stop** to finish. The file is written and its path is shown in the status line.
 
-The audio source cannot be changed while recording.
+Settings are locked while recording. Closing the window during a recording finishes and saves the file first.
 
 ## Platform notes
 
@@ -43,6 +76,8 @@ The audio source cannot be changed while recording.
 | Windows  | Yes    | Yes        | Yes                                   |
 | Linux    | Yes    | Yes        | Yes, via a PulseAudio/PipeWire monitor |
 | macOS    | Yes    | Yes        | Requires a virtual device (BlackHole) |
+
+The area selector uses a normal full-screen window, so it works without compositor transparency. On Wayland, the window manager may ignore the request to stay on top or to place the overlay on a specific monitor; the selected pixels are still correct because they are measured on the screenshot.
 
 ## License
 
