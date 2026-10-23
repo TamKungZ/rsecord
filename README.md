@@ -10,6 +10,8 @@ A lightweight, cross-platform screen recorder built with Rust and [iced](https:/
 - Choose which display to record
 - Audio source: none, microphone, or system audio (Windows; Linux via a monitor source; macOS via BlackHole)
 - Live recording timer, status line, and a running estimate of output size and bitrate
+- **Themes**: 10 built-in themes plus "Follow system" (light or dark with your OS). The default is the rsecord Dark theme. Pick one in **Settings > Theme**; it is saved automatically
+- Live input checking: an invalid number is outlined in red with the reason, and recording cannot start until it is fixed
 - Settings are remembered between runs
 
 <br>
@@ -45,9 +47,28 @@ The area is stored in physical pixels, so it is exact on high-DPI screens. You c
 | Toggles | skip frames, adaptive quantization, background detection, scene-change detection | |
 | AAC bitrate | 32 - 320 kbps | |
 
-Invalid numbers are reported immediately and recording will not start until they are fixed.
+Invalid numbers are outlined in red with the reason right under the field, and recording will not start until they are fixed. The record page tells you what is wrong and has a **Fix** button that jumps to the right tab.
 
 Settings are stored in `settings.conf` inside the `rsecord` folder of your OS config directory (for example `%APPDATA%\rsecord` on Windows, `~/.config/rsecord` on Linux).
+
+## Themes
+
+| Theme | Style |
+|---|---|
+| Follow system | rsecord Light or Dark, following your OS setting |
+| rsecord Dark / rsecord Light | The default look, from the app icon colors |
+| Midnight (OLED) | Pure black background |
+| Nord, Dracula, Catppuccin Mocha / Latte, Tokyo Night, Gruvbox Dark, Solarized Light | Popular palettes |
+
+Every color in the UI comes from the active theme. Text on buttons and badges is chosen automatically for readability, and a unit test checks WCAG AA contrast (4.5:1) for every theme.
+
+## Keyboard
+
+| Key | Action |
+|---|---|
+| Tab / Shift+Tab | Move between input fields |
+| Esc | Leave Settings, or cancel the area selector |
+| Enter | Confirm the area selector |
 
 ## Output
 
@@ -67,7 +88,7 @@ Filename format: `rsecord-YYYY-MM-DD_HH-MM-SS.mp4`
 2. Pick a quality preset or adjust the numbers.
 3. Click **Start Recording**, then **Stop** to finish. The file is written and its path is shown in the status line.
 
-Settings are locked while recording. Closing the window during a recording finishes and saves the file first.
+Settings are locked while recording. Closing the window during a recording, or while the file is being written, finishes and saves the file first. After a recording, **Open folder** shows where it was saved.
 
 ## Platform notes
 
