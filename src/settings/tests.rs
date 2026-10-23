@@ -55,6 +55,7 @@ fn region_clamp() {
 fn conf_round_trip() {
     let mut a = Settings::with_preset(Preset::Ultra, &Settings::default());
     a.preset = Preset::Custom;
+    a.theme = AppTheme::Nord;
     a.qp_min = 12;
     a.qp_max = 38;
     a.threads = 4;
@@ -65,4 +66,22 @@ fn conf_round_trip() {
     let audio = b.apply_conf(&text);
     assert_eq!(a, b);
     assert_eq!(audio.as_deref(), Some("Microphone"));
+}
+
+#[test]
+fn presets_keep_the_theme() {
+    let cur = Settings {
+        theme: AppTheme::Dracula,
+        ..Settings::default()
+    };
+    for p in Preset::ALL {
+        assert_eq!(Settings::with_preset(*p, &cur).theme, AppTheme::Dracula);
+    }
+}
+
+#[test]
+fn unknown_theme_falls_back_to_default() {
+    let mut s = Settings::default();
+    s.apply_conf("theme=Not A Real Theme\nfps=30\n");
+    assert_eq!(s.theme, AppTheme::System);
 }
