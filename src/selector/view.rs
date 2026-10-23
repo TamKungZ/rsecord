@@ -1,15 +1,16 @@
 use super::{SelMsg, Selector};
 use crate::settings::MIN_DIM;
-use iced::{Alignment, Background, Border, Color, ContentFit, Element, Length, Padding, Size, Theme};
+use crate::theme::{self, Tone};
 use iced::widget::{button, container, image, mouse_area, responsive, row, text, Stack};
+use iced::{Alignment, Background, Border, Color, ContentFit, Element, Length, Padding, Size, Theme};
 
 const HANDLE: f32 = 10.0;
-const ACCENT: Color = Color::from_rgb(0.20, 0.62, 1.0);
 
 impl Selector {
     pub fn view(&self) -> Element<'_, SelMsg> {
         let handle = self.handle.clone();
         let rect = self.rect;
+        let can_confirm = self.can_confirm();
         let (iw, ih) = (self.img_w as f32, self.img_h as f32);
 
         responsive(move |size: Size| {
@@ -23,9 +24,29 @@ impl Selector {
                     .into(),
             );
 
+            let mut too_small = false;
             match rect {
                 None => {
                     layers.push(abs(0.0, 0.0, dim(size.width, size.height)));
+                    layers.push(
+                        container(
+                            container(
+                                text("Drag anywhere to draw the area to record")
+                                    .size(22)
+                                    .style(|t: &Theme| iced::widget::text::Style {
+                                        color: Some(theme::on(overlay_bg(t))),
+                                    }),
+                            )
+                            .padding(Padding::from([12.0, 20.0]))
+                            .style(|t: &Theme| container::Style {
+                                background: Some(Background::Color(overlay_bg(t))),
+                                border: iced::border::rounded(10),
+                                ..container::Style::default()
+                            }),
+                        )
+                        .center(Length::Fill)
+                        .into(),
+                    );
                 }
                 Some(e) => {
                     let (sx, sy) = (size.width / iw, size.height / ih);
@@ -37,13 +58,16 @@ impl Selector {
                     layers.push(abs(0.0, t, dim(l, h)));
                     layers.push(abs(l + w, t, dim(size.width - l - w, h)));
 
+                    let (pw, ph) = ((e.w().round() as u32) & !1, (e.h().round() as u32) & !1);
+                    too_small = pw < MIN_DIM || ph < MIN_DIM;
+
                     layers.push(abs(
                         l,
                         t,
                         container("")
                             .width(Length::Fixed(w.max(1.0)))
                             .height(Length::Fixed(h.max(1.0)))
-                            .style(frame_style)
+                            .style(move |th: &Theme| frame_style(th, too_small))
                             .into(),
                     ));
 
@@ -64,25 +88,23 @@ impl Selector {
                             container("")
                                 .width(Length::Fixed(HANDLE))
                                 .height(Length::Fixed(HANDLE))
-                                .style(handle_style)
+                                .style(move |th: &Theme| handle_style(th, too_small))
                                 .into(),
                         ));
                     }
 
-                    let (pw, ph) = ((e.w().round() as u32) & !1, (e.h().round() as u32) & !1);
-                    let small = pw < MIN_DIM || ph < MIN_DIM;
-                    let label = if small {
+                    let label = if too_small {
                         format!("{pw} x {ph}  (too small, min {MIN_DIM} x {MIN_DIM})")
                     } else {
                         format!("{pw} x {ph}   at ({}, {})", e.l.round() as i32, e.t.round() as i32)
                     };
-                    let (lx, ly) = if t >= 32.0 { (l, t - 30.0) } else { (l + 6.0, t + 6.0) };
+                    let (lx, ly) = if t >= 36.0 { (l, t - 34.0) } else { (l + 6.0, t + 6.0) };
                     layers.push(abs(
                         lx,
                         ly,
-                        container(text(label).size(14).color(Color::WHITE))
-                            .padding(5)
-                            .style(label_style)
+                        container(text(label).size(14))
+                            .padding(Padding::from([5.0, 8.0]))
+                            .style(move |th: &Theme| label_style(th, too_small))
                             .into(),
                     ));
                 }
@@ -97,21 +119,26 @@ impl Selector {
                     .into(),
             );
 
+            let hint = if too_small {
+                "The area is too small to record"
+            } else {
+                "Drag to draw, inside to move, edges to resize"
+            };
             let bar = container(
                 row![
-                    text("Drag to draw, inside to move, edges to resize").size(13),
+                    text(hint).size(13),
                     button(text("Select all").size(13))
                         .on_press(SelMsg::All)
-                        .padding(6)
-                        .style(button::secondary),
+                        .padding(7)
+                        .style(theme::ghost),
                     button(text("Confirm (Enter)").size(13))
-                        .on_press(SelMsg::Confirm)
-                        .padding(6)
-                        .style(button::success),
+                        .on_press_maybe(can_confirm.then_some(SelMsg::Confirm))
+                        .padding(7)
+                        .style(theme::solid(Tone::Success)),
                     button(text("Cancel (Esc)").size(13))
                         .on_press(SelMsg::Cancel)
-                        .padding(6)
-                        .style(button::danger),
+                        .padding(7)
+                        .style(theme::ghost),
                 ]
                 .spacing(10)
                 .align_y(Alignment::Center),
@@ -158,6 +185,17 @@ fn dim(w: f32, h: f32) -> Element<'static, SelMsg> {
         .into()
 }
 
+/// The selection colour. It sits on a screenshot, so it is made readable
+/// against the black dimming rather than against the page background.
+fn accent(theme: &Theme, too_small: bool) -> Color {
+    let tone = if too_small { Tone::Danger } else { Tone::Primary };
+    theme::legible(tone.fill(theme), Color::BLACK)
+}
+
+fn overlay_bg(theme: &Theme) -> Color {
+    theme.extended_palette().background.base.color.scale_alpha(0.94)
+}
+
 fn dim_style(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.55))),
@@ -165,10 +203,10 @@ fn dim_style(_: &Theme) -> container::Style {
     }
 }
 
-fn frame_style(_: &Theme) -> container::Style {
+fn frame_style(theme: &Theme, too_small: bool) -> container::Style {
     container::Style {
         border: Border {
-            color: ACCENT,
+            color: accent(theme, too_small),
             width: 2.0,
             radius: 0.0.into(),
         },
@@ -176,36 +214,45 @@ fn frame_style(_: &Theme) -> container::Style {
     }
 }
 
-fn handle_style(_: &Theme) -> container::Style {
+fn handle_style(theme: &Theme, too_small: bool) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::WHITE)),
         border: Border {
-            color: ACCENT,
-            width: 1.5,
+            color: accent(theme, too_small),
+            width: 2.0,
             radius: 2.0.into(),
         },
         ..Default::default()
     }
 }
 
-fn label_style(_: &Theme) -> container::Style {
+fn label_style(theme: &Theme, too_small: bool) -> container::Style {
+    let ep = theme.extended_palette();
     container::Style {
-        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.8))),
+        background: Some(Background::Color(overlay_bg(theme))),
+        text_color: Some(if too_small {
+            Tone::Danger.fg(theme)
+        } else {
+            ep.background.base.text
+        }),
         border: Border {
-            radius: 4.0.into(),
-            ..Default::default()
+            color: accent(theme, too_small),
+            width: 1.0,
+            radius: 6.0.into(),
         },
         ..Default::default()
     }
 }
 
-fn bar_style(_: &Theme) -> container::Style {
+fn bar_style(theme: &Theme) -> container::Style {
+    let ep = theme.extended_palette();
     container::Style {
-        background: Some(Background::Color(Color::from_rgba(0.08, 0.08, 0.10, 0.92))),
+        background: Some(Background::Color(overlay_bg(theme))),
+        text_color: Some(ep.background.base.text),
         border: Border {
-            color: Color::from_rgba(1.0, 1.0, 1.0, 0.15),
+            color: ep.background.strong.color,
             width: 1.0,
-            radius: 8.0.into(),
+            radius: 10.0.into(),
         },
         ..Default::default()
     }
