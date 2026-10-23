@@ -82,47 +82,53 @@ jobs:
                   if (w, h) != (256, 256):
                       errors.append(f"assets/icon-256.png: is {w}x{h}, expected 256x256")
 
-          d = read("assets/icon.ico")
-          if d is not None:
+          for name in ("icon", "icon-installer"):
+              p = f"assets/{name}.ico"
+              d = read(p)
+              if d is None:
+                  continue
               if len(d) < 6 or struct.unpack("<HH", d[:4]) != (0, 1):
-                  errors.append("assets/icon.ico: not a valid ICO file")
-              else:
-                  count = struct.unpack("<H", d[4:6])[0]
-                  sizes = set()
-                  for i in range(count):
-                      e = d[6 + 16 * i: 6 + 16 * (i + 1)]
-                      if len(e) < 16:
-                          errors.append("assets/icon.ico: truncated directory")
-                          break
-                      sizes.add(e[0] or 256)
-                  print("icon.ico sizes:", sorted(sizes))
-                  if 256 not in sizes:
-                      errors.append("assets/icon.ico: missing 256x256 image")
-                  for s in (16, 32, 48):
-                      if s not in sizes:
-                          errors.append(f"assets/icon.ico: missing {s}x{s} image (blurry/blank icon in Explorer/taskbar)")
+                  errors.append(f"{p}: not a valid ICO file")
+                  continue
+              count = struct.unpack("<H", d[4:6])[0]
+              sizes = set()
+              for i in range(count):
+                  e = d[6 + 16 * i: 6 + 16 * (i + 1)]
+                  if len(e) < 16:
+                      errors.append(f"{p}: truncated directory")
+                      break
+                  sizes.add(e[0] or 256)
+              print(p, "sizes:", sorted(sizes))
+              if 256 not in sizes:
+                  errors.append(f"{p}: missing 256x256 image")
+              for s in (16, 32, 48):
+                  if s not in sizes:
+                      errors.append(f"{p}: missing {s}x{s} image (blurry/blank icon in Explorer/taskbar)")
 
-          d = read("assets/icon.icns")
-          if d is not None:
+          for name in ("icon", "icon-installer"):
+              p = f"assets/{name}.icns"
+              d = read(p)
+              if d is None:
+                  continue
               if d[:4] != b"icns":
-                  errors.append("assets/icon.icns: not an ICNS file")
-              else:
-                  total = struct.unpack(">I", d[4:8])[0]
-                  if total != len(d):
-                      errors.append(f"assets/icon.icns: header says {total} bytes, file is {len(d)}")
-                  types, off = [], 8
-                  while off + 8 <= len(d):
-                      t = d[off:off + 4].decode("latin1")
-                      n = struct.unpack(">I", d[off + 4:off + 8])[0]
-                      if n < 8:
-                          break
-                      types.append(t)
-                      off += n
-                  print("icon.icns chunks:", types)
-                  if not any(t in types for t in ("ic08", "ic09", "ic10", "ic13", "ic14")):
-                      errors.append("assets/icon.icns: no 256px+ representation (ic08/ic09/ic10/ic13/ic14)")
-                  if "ic10" not in types:
-                      warnings.append("assets/icon.icns: no 1024px (ic10) image; Retina Dock icon will be upscaled")
+                  errors.append(f"{p}: not an ICNS file")
+                  continue
+              total = struct.unpack(">I", d[4:8])[0]
+              if total != len(d):
+                  errors.append(f"{p}: header says {total} bytes, file is {len(d)}")
+              types, off = [], 8
+              while off + 8 <= len(d):
+                  t = d[off:off + 4].decode("latin1")
+                  n = struct.unpack(">I", d[off + 4:off + 8])[0]
+                  if n < 8:
+                      break
+                  types.append(t)
+                  off += n
+              print(p, "chunks:", types)
+              if not any(t in types for t in ("ic08", "ic09", "ic10", "ic13", "ic14")):
+                  errors.append(f"{p}: no 256px+ representation (ic08/ic09/ic10/ic13/ic14)")
+              if "ic10" not in types:
+                  warnings.append(f"{p}: no 1024px (ic10) image; Retina display will upscale it")
 
           d = read("assets/icon.svg")
           if d is not None:
@@ -223,7 +229,7 @@ jobs:
           DisableProgramGroupPage=yes
           OutputDir=dist
           OutputBaseFilename=rsecord-setup
-          SetupIconFile=assets\icon.ico
+          SetupIconFile=assets\icon-installer.ico
           WizardStyle=modern
           Compression=lzma2
           SolidCompression=yes
@@ -454,7 +460,9 @@ jobs:
       - run: cargo build --release --locked --target x86_64-apple-darwin
 
       - name: Validate icon.icns
-        run: iconutil --convert iconset assets/icon.icns --output "$RUNNER_TEMP/icon.iconset"
+        run: |
+          iconutil --convert iconset assets/icon.icns --output "$RUNNER_TEMP/icon.iconset"
+          iconutil --convert iconset assets/icon-installer.icns --output "$RUNNER_TEMP/icon-installer.iconset"
 
       - name: Create app bundle and DMG
         env:
@@ -504,6 +512,8 @@ jobs:
           mkdir -p dist/dmg
           ditto "$APP" dist/dmg/rsecord.app
           ln -s /Applications dist/dmg/Applications
+          cp assets/icon-installer.icns dist/dmg/.VolumeIcon.icns
+          SetFile -a C dist/dmg
           for i in 1 2 3; do
             if hdiutil create -volname "rsecord" -srcfolder dist/dmg -ov -format UDZO dist/rsecord-macos.dmg; then
               break
