@@ -8,7 +8,7 @@ mod region;
 #[cfg(test)]
 mod tests;
 
-pub use choices::{Content, Effort, Filter, Preset, RateMode, ResMode};
+pub use choices::{AppTheme, Content, Effort, Filter, Preset, RateMode, ResMode};
 pub use region::Region;
 
 /// Smallest width/height (pixels) accepted for a capture area or output size.
@@ -16,6 +16,8 @@ pub const MIN_DIM: u32 = 16;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
+    pub theme: AppTheme,
+
     pub preset: Preset,
 
     pub fps: u32,
@@ -50,6 +52,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
+            theme: AppTheme::System,
             preset: Preset::Balanced,
             fps: 30,
             res_mode: ResMode::Source,
