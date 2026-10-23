@@ -1,8 +1,9 @@
 use crate::app::App;
-use crate::app::message::{CaptureMode, Message};
+use crate::app::message::{CaptureMode, Message, Status};
 use crate::recorder::AudioSource;
 use crate::settings::{MIN_DIM, RateMode};
 use iced::{window, Task};
+use std::path::Path;
 
 impl App {
     pub(super) fn save(&self) {
@@ -28,15 +29,16 @@ impl App {
             self.region = Some(r);
             self.mode = CaptureMode::Region;
             self.sync_region_texts();
-            self.status = format!("Area: {}x{} at ({}, {})", r.w, r.h, r.x, r.y);
+            self.status = Status::info(format!("Area: {}x{} at ({}, {})", r.w, r.h, r.x, r.y));
         } else {
-            self.status = "Area selection cancelled".into();
+            self.status = Status::info("Area selection cancelled");
         }
         self.selector = None;
         Task::batch([window::close(id), self.restore_main()])
     }
 
-    pub(super) fn summary(&self) -> String {
+    /// Expected output as two short strings: frame size and rate, then bitrate and size.
+    pub(super) fn summary_parts(&self) -> (String, String) {
         let (sw, sh) = match (self.mode, self.region, &self.display) {
             (CaptureMode::Region, Some(r), _) => (r.w, r.h),
             (_, _, Some(d)) => (d.width, d.height),
@@ -56,11 +58,30 @@ impl App {
             RateMode::Bitrate => "",
             RateMode::Quality => " (target)",
         };
-        format!(
-            "Output {ow}x{oh} @ {} fps, {:.1} Mbps{tag}, about {:.0} MB/min",
-            s.fps,
-            bps as f64 / 1e6,
-            mb_min
+        (
+            format!("{ow} x {oh} at {} fps", s.fps),
+            format!("{:.1} Mbps{tag}, about {:.0} MB/min", bps as f64 / 1e6, mb_min),
         )
     }
+}
+
+/// Opens the folder holding `file` in the system file manager.
+pub(super) fn open_folder(file: &Path) -> Result<(), String> {
+    let dir = file.parent().unwrap_or(file);
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let program = "xdg-open";
+    std::process::Command::new(program)
+        .arg(dir)
+        .spawn()
+        .map(|mut child| {
+            // Reap the launcher so it does not linger as a zombie.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        })
+        .map_err(|e| format!("Could not open the folder: {e}"))
 }
