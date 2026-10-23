@@ -4,6 +4,7 @@ mod app;
 mod recorder;
 mod selector;
 mod settings;
+mod theme;
 
 use app::App;
 
