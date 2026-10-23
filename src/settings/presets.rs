@@ -2,7 +2,11 @@ use super::{Effort, Filter, Preset, ResMode, Settings};
 
 impl Settings {
     pub fn with_preset(p: Preset, current: &Settings) -> Settings {
-        let mut s = Settings::default();
+        // Presets change how the video is encoded, never how the app looks.
+        let mut s = Settings {
+            theme: current.theme,
+            ..Settings::default()
+        };
         match p {
             Preset::Low => {
                 s.fps = 24;
