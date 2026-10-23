@@ -87,6 +87,11 @@ impl Selector {
         }
     }
 
+    /// An area that is big enough to record has been drawn.
+    pub fn can_confirm(&self) -> bool {
+        self.region().is_some()
+    }
+
     pub fn region(&self) -> Option<Region> {
         let e = self.rect?;
         Region {
