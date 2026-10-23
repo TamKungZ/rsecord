@@ -17,6 +17,20 @@ macro_rules! choice {
     };
 }
 
+choice!(AppTheme {
+    System => "Follow system",
+    BrandDark => "rsecord Dark",
+    BrandLight => "rsecord Light",
+    Midnight => "Midnight (OLED)",
+    Nord => "Nord",
+    Dracula => "Dracula",
+    Mocha => "Catppuccin Mocha",
+    Latte => "Catppuccin Latte",
+    TokyoNight => "Tokyo Night",
+    Gruvbox => "Gruvbox Dark",
+    SolarizedLight => "Solarized Light",
+});
+
 choice!(Preset {
     Low => "Low (small file)",
     Balanced => "Balanced",
