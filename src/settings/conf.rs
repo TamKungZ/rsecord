@@ -1,5 +1,5 @@
 use super::choices::pick;
-use super::{Content, Effort, Filter, Preset, RateMode, ResMode, Settings};
+use super::{AppTheme, Content, Effort, Filter, Preset, RateMode, ResMode, Settings};
 use std::path::PathBuf;
 
 impl Settings {
@@ -12,6 +12,7 @@ impl Settings {
             o.push('\n');
         };
         put("audio", audio.to_string());
+        put("theme", self.theme.to_string());
         put("preset", self.preset.to_string());
         put("fps", self.fps.to_string());
         put("res_mode", self.res_mode.to_string());
@@ -47,6 +48,11 @@ impl Settings {
             let (k, v) = (k.trim(), v.trim());
             match k {
                 "audio" => audio = Some(v.to_string()),
+                "theme" => {
+                    if let Some(x) = pick(AppTheme::ALL, v) {
+                        self.theme = x;
+                    }
+                }
                 "preset" => {
                     if let Some(x) = pick(Preset::ALL, v) {
                         self.preset = x;
